@@ -1,6 +1,5 @@
 import { IExecuteFunctions } from 'n8n-workflow';
 import { INodeExecutionData, INodeType, INodeTypeDescription, NodeConnectionType, IDataObject } from 'n8n-workflow';
-import { AzureKeyCredential } from '@azure/core-auth';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 
 // Định nghĩa kiểu dữ liệu cho đối tượng error
@@ -15,7 +14,7 @@ export class AzureDeepSeekNode implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Azure DeepSeek LLM',
 		name: 'azureDeepSeekLlm',
-		icon: 'file:deepseek.svg',
+		icon: 'file:n8n-nodes-azure-deepseek.svg',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
@@ -42,10 +41,71 @@ export class AzureDeepSeekNode implements INodeType {
 						name: 'Chat Completion',
 						value: 'chatCompletion',
 						description: 'Generate a chat completion using DeepSeek model',
+						action: 'Generate a chat completion using DeepSeek model',
+					},
+					{
+						name: 'LLM Chain',
+						value: 'llmChain',
+						description: 'Use DeepSeek as part of an AI agent chain',
+						action: 'Use DeepSeek as part of an AI agent chain',
 					},
 				],
 				default: 'chatCompletion',
 			},
+			// Configuration for LLM Chain - This is required for Agent compatibility
+			{
+				displayName: 'Text',
+				name: 'text',
+				type: 'string',
+				displayOptions: {
+					show: {
+						operation: ['llmChain'],
+					},
+				},
+				default: '={{$json["input"]}}',
+				description: 'Text to process with the language model',
+				required: true,
+			},
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add Option',
+				displayOptions: {
+					show: {
+						operation: ['llmChain'],
+					},
+				},
+				default: {},
+				options: [
+					{
+						displayName: 'Model',
+						name: 'model',
+						type: 'string',
+						default: 'DeepSeek-V3',
+						description: 'The deployed model name to use',
+					},
+					{
+						displayName: 'Sampling Temperature',
+						name: 'temperature',
+						type: 'number',
+						default: 0.7,
+						description: 'Controls randomness: 0 is deterministic, higher values are more random',
+						typeOptions: {
+							minValue: 0,
+							maxValue: 2,
+						},
+					},
+					{
+						displayName: 'Maximum Length in Tokens',
+						name: 'maxTokens',
+						type: 'number',
+						default: 1000,
+						description: 'The maximum number of tokens to generate',
+					},
+				],
+			},
+			// Original properties for chat completion
 			{
 				displayName: 'System Prompt',
 				name: 'systemPrompt',
@@ -161,10 +221,97 @@ export class AzureDeepSeekNode implements INodeType {
 		for (let i = 0; i < items.length; i++) {
 			const operation = this.getNodeParameter('operation', i) as string;
 
-			if (operation === 'chatCompletion') {
-				// Get credentials from n8n's credential store
-				const credentials = await this.getCredentials('azureDeepSeekApi');
-				
+			// Get credentials from n8n's credential store
+			const credentials = await this.getCredentials('azureDeepSeekApi');
+
+			if (operation === 'llmChain') {
+				// Handle LLM Chain operations - required for Agent compatibility
+				const text = this.getNodeParameter('text', i) as string;
+				const options = this.getNodeParameter('options', i) as {
+					model?: string;
+					temperature?: number;
+					maxTokens?: number;
+				};
+
+				try {
+					// Format messages for Azure DeepSeek LLM API
+					const messages = [
+						{
+							role: 'user',
+							content: text,
+						},
+					];
+
+					// Prepare request body for LLM chain operation
+					const requestBody = {
+						messages: messages,
+						max_tokens: options.maxTokens ?? 1000,
+						temperature: options.temperature ?? 0.7,
+						model: options.model || (credentials.modelDeploymentName as string) || 'DeepSeek-V3',
+						stream: false,
+					};
+
+					// Use the same URL handling and API calls as in chatCompletion
+					const apiVersion = '2023-12-01-preview';
+					
+					// Clean and format the endpoint URL
+					let baseUrl = (credentials.inferenceEndpoint as string).trim();
+					if (baseUrl.endsWith('/')) {
+						baseUrl = baseUrl.slice(0, -1);
+					}
+
+					// Determine the correct URL format based on the endpoint structure
+					let url;
+					if (baseUrl.includes('/openai')) {
+						url = `${baseUrl}/deployments/${(credentials.modelDeploymentName as string).trim()}/chat/completions?api-version=${apiVersion}`;
+					} else if (baseUrl.includes('/models')) {
+						url = `${baseUrl}/chat/completions?api-version=${apiVersion}`;
+					} else {
+						url = `${baseUrl}/deployments/${(credentials.modelDeploymentName as string).trim()}/chat/completions?api-version=${apiVersion}`;
+					}
+
+					const response = await axios.post(url, requestBody, {
+						headers: {
+							'Content-Type': 'application/json',
+							'api-key': credentials.apiKey as string,
+						},
+						timeout: 60000,
+					});
+
+					if (response.status !== 200) {
+						throw new Error(`Azure DeepSeek LLM error: ${response.data?.error?.message || response.statusText || 'Unknown error'}`);
+					}
+
+					// Format the response for LLM chain compatibility
+					const assistantMessage = response.data?.choices?.[0]?.message?.content || '';
+					
+					// Structure output in the format expected by n8n Agent
+					const newItem: INodeExecutionData = {
+						json: {
+							text: assistantMessage,
+							response: response.data,
+						},
+						pairedItem: { item: i },
+					};
+					
+					returnData.push(newItem);
+				} catch (error) {
+					// Error handling
+					const axiosError = error as AxiosError;
+					if (axiosError.code === 'ECONNABORTED') {
+						throw new Error('Azure DeepSeek LLM timeout: The request took too long to complete. Please try again later.');
+					}
+					
+					if (axiosError.response) {
+						const errorData = axiosError.response.data as AzureErrorResponse;
+						throw new Error(`Azure DeepSeek LLM error: ${errorData?.error?.message || axiosError.message}`);
+					} else if (axiosError.request) {
+						throw new Error(`Azure DeepSeek LLM network error: No response received from server. Please check your network connection and Azure endpoint.`);
+					}
+					throw error;
+				}
+			} else if (operation === 'chatCompletion') {
+				// Existing chatCompletion code
 				// Get parameters
 				const systemPrompt = this.getNodeParameter('systemPrompt', i) as string;
 				const userPrompt = this.getNodeParameter('userPrompt', i) as string;
@@ -203,9 +350,29 @@ export class AzureDeepSeekNode implements INodeType {
 
 				try {
 					// Updated URL format with api-version parameter
-					const apiVersion = '2024-05-01-preview';
-					const url = `${credentials.inferenceEndpoint as string}/models/chat/completions?api-version=${apiVersion}`;
+					const apiVersion = '2023-12-01-preview'; // Using a more widely supported API version
 					
+					// Clean and format the endpoint URL
+					let baseUrl = (credentials.inferenceEndpoint as string).trim();
+					if (baseUrl.endsWith('/')) {
+						baseUrl = baseUrl.slice(0, -1);
+					}
+
+					// Determine the correct URL format based on the endpoint structure
+					let url;
+					if (baseUrl.includes('/openai')) {
+						// Format for Azure OpenAI Service endpoint
+						url = `${baseUrl}/deployments/${(credentials.modelDeploymentName as string).trim()}/chat/completions?api-version=${apiVersion}`;
+					} else if (baseUrl.includes('/models')) {
+						// Format for Azure AI Foundry endpoint with /models path
+						url = `${baseUrl}/chat/completions?api-version=${apiVersion}`;
+					} else {
+						// General format that might work with other Azure AI services
+						url = `${baseUrl}/deployments/${(credentials.modelDeploymentName as string).trim()}/chat/completions?api-version=${apiVersion}`;
+					}
+					
+					console.log(`Making request to: ${url}`); // Helpful for debugging
+
 					// Sử dụng axios thay vì fetch để có timeout rõ ràng
 					const response = await axios.post(url, requestBody, {
 						headers: {
