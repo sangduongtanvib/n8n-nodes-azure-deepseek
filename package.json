@@ -1,0 +1,57 @@
+{
+  "name": "n8n-nodes-azure-deepseek",
+  "version": "0.1.0",
+  "description": "n8n node for DeepSeek LLM on Azure AI Foundry",
+  "keywords": [
+    "n8n",
+    "node",
+    "azure",
+    "deepseek",
+    "llm",
+    "ai",
+    "foundry"
+  ],
+  "license": "MIT",
+  "homepage": "",
+  "author": {
+    "name": "Sang Duong",
+    "email": "duongsang97@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sangduongtanvib/n8n-nodes-azure-deepseek.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "format": "prettier --write .",
+    "lint": "eslint --ext .ts --fix .",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/nodes/AzureDeepSeekApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/AzureDeepSeekNode.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "n8n-workflow": "^1.82.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@azure-rest/ai-inference": "^1.0.0-beta.6",
+    "@azure/core-auth": "^1.9.0",
+    "axios": "^1.8.4",
+    "n8n-core": "^1.0.0"
+  }
+}
