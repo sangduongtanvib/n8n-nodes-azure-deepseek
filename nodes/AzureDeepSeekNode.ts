@@ -1,7 +1,15 @@
 import { IExecuteFunctions } from 'n8n-workflow';
 import { INodeExecutionData, INodeType, INodeTypeDescription, NodeConnectionType, IDataObject } from 'n8n-workflow';
-import ModelClient from '@azure-rest/ai-inference';
 import { AzureKeyCredential } from '@azure/core-auth';
+import axios, { AxiosError, AxiosResponse } from 'axios';
+
+// Định nghĩa kiểu dữ liệu cho đối tượng error
+interface AzureErrorResponse {
+	error?: {
+		message?: string;
+		code?: string;
+	};
+}
 
 export class AzureDeepSeekNode implements INodeType {
 	description: INodeTypeDescription = {
@@ -39,9 +47,25 @@ export class AzureDeepSeekNode implements INodeType {
 				default: 'chatCompletion',
 			},
 			{
-				displayName: 'Messages',
-				name: 'messages',
-				type: 'json',
+				displayName: 'System Prompt',
+				name: 'systemPrompt',
+				type: 'string',
+				typeOptions: {
+					rows: 3,
+				},
+				displayOptions: {
+					show: {
+						operation: ['chatCompletion'],
+					},
+				},
+				default: 'You are a helpful assistant.',
+				description: 'The system message that sets behavior of the assistant',
+				placeholder: 'You are a helpful assistant specialized in...',
+			},
+			{
+				displayName: 'User Prompt',
+				name: 'userPrompt',
+				type: 'string',
 				typeOptions: {
 					rows: 4,
 				},
@@ -50,8 +74,9 @@ export class AzureDeepSeekNode implements INodeType {
 						operation: ['chatCompletion'],
 					},
 				},
-				default: '[\n  {\n    "role": "system",\n    "content": "You are a helpful assistant."\n  },\n  {\n    "role": "user",\n    "content": "Hello!"\n  }\n]',
-				description: 'The messages to send to the model in JSON format',
+				default: '',
+				description: 'The prompt from the user to send to the model',
+				placeholder: 'Write your prompt here...',
 				required: true,
 			},
 			{
@@ -140,14 +165,9 @@ export class AzureDeepSeekNode implements INodeType {
 				// Get credentials from n8n's credential store
 				const credentials = await this.getCredentials('azureDeepSeekApi');
 				
-				// Create Azure AI Inference client
-				const client = ModelClient(
-					credentials.inferenceEndpoint as string, 
-					new AzureKeyCredential(credentials.apiKey as string)
-				);
-				
 				// Get parameters
-				const messages = JSON.parse(this.getNodeParameter('messages', i) as string);
+				const systemPrompt = this.getNodeParameter('systemPrompt', i) as string;
+				const userPrompt = this.getNodeParameter('userPrompt', i) as string;
 				const additionalOptions = this.getNodeParameter('additionalOptions', i) as {
 					temperature?: number;
 					maxTokens?: number;
@@ -156,8 +176,20 @@ export class AzureDeepSeekNode implements INodeType {
 					presencePenalty?: number;
 					stream?: boolean;
 				};
+				
+				// Create messages array
+				const messages = [
+					{
+						role: 'system',
+						content: systemPrompt,
+					},
+					{
+						role: 'user',
+						content: userPrompt,
+					},
+				];
 
-				// Prepare request
+				// Prepare request body - note model name is now explicitly "DeepSeek-V3" if not specified
 				const requestBody = {
 					messages: messages,
 					max_tokens: additionalOptions.maxTokens ?? 1000,
@@ -165,32 +197,31 @@ export class AzureDeepSeekNode implements INodeType {
 					top_p: additionalOptions.topP ?? 0.95,
 					frequency_penalty: additionalOptions.frequencyPenalty ?? 0,
 					presence_penalty: additionalOptions.presencePenalty ?? 0,
-					model: credentials.modelDeploymentName as string,
+					model: (credentials.modelDeploymentName as string) || 'DeepSeek-V3',
 					stream: additionalOptions.stream ?? false,
 				};
 
 				try {
-					// Use the client directly instead of the path method
-					// The SDK might have a specific way to call chat completions
-					// For now, we'll use a direct fetch to the endpoint
-					const url = `${credentials.inferenceEndpoint as string}/chat/completions`;
+					// Updated URL format with api-version parameter
+					const apiVersion = '2024-05-01-preview';
+					const url = `${credentials.inferenceEndpoint as string}/models/chat/completions?api-version=${apiVersion}`;
 					
-					const response = await fetch(url, {
-						method: 'POST',
+					// Sử dụng axios thay vì fetch để có timeout rõ ràng
+					const response = await axios.post(url, requestBody, {
 						headers: {
 							'Content-Type': 'application/json',
 							'api-key': credentials.apiKey as string,
 						},
-						body: JSON.stringify(requestBody),
+						timeout: 60000, // Timeout 60 giây, có thể điều chỉnh tùy nhu cầu
+						validateStatus: (status) => status < 500, // Chỉ từ chối khi có lỗi server
 					});
 					
-					if (!response.ok) {
-						const errorData = await response.json() as { error?: { message?: string } };
-						throw new Error(`Azure DeepSeek LLM error: ${errorData.error?.message || response.statusText}`);
+					if (response.status !== 200) {
+						throw new Error(`Azure DeepSeek LLM error: ${response.data?.error?.message || response.statusText || 'Unknown error'}`);
 					}
 					
-					// Get the response as JSON and convert to IDataObject
-					const responseData = await response.json();
+					// Get the response data
+					const responseData = response.data;
 					
 					// Create output item with data
 					const newItem: INodeExecutionData = {
@@ -200,9 +231,18 @@ export class AzureDeepSeekNode implements INodeType {
 					
 					returnData.push(newItem);
 				} catch (error) {
-					// Handle the error appropriately
-					if (error.response) {
-						throw new Error(`Azure DeepSeek LLM error: ${error.response.data?.error?.message || error.message}`);
+					// Xử lý các lỗi timeout riêng biệt
+					const axiosError = error as AxiosError;
+					if (axiosError.code === 'ECONNABORTED') {
+						throw new Error('Azure DeepSeek LLM timeout: The request took too long to complete. Please try again later.');
+					}
+					
+					// Xử lý các lỗi khác
+					if (axiosError.response) {
+						const errorData = axiosError.response.data as AzureErrorResponse;
+						throw new Error(`Azure DeepSeek LLM error: ${errorData?.error?.message || axiosError.message}`);
+					} else if (axiosError.request) {
+						throw new Error(`Azure DeepSeek LLM network error: No response received from server. Please check your network connection and Azure endpoint.`);
 					}
 					throw error;
 				}

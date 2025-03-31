@@ -11,6 +11,6 @@
     "declaration": true,
     "skipLibCheck": true
   },
-  "include": ["src"],
+  "include": ["src", "nodes/AzureDeepSeekApi.credentials.ts", "nodes/AzureDeepSeekNode.ts", "index.ts"],
   "exclude": ["node_modules", "**/*.spec.ts"]
 }

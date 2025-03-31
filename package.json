@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-azure-deepseek",
-  "version": "0.1.0",
+  "version": "0.1.9",
   "description": "n8n node for DeepSeek LLM on Azure AI Foundry",
   "keywords": [
     "n8n",
@@ -21,8 +21,7 @@
     "type": "git",
     "url": "https://github.com/sangduongtanvib/n8n-nodes-azure-deepseek.git"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "index.js",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -31,15 +30,18 @@
     "prepublishOnly": "npm run build"
   },
   "files": [
-    "dist"
+    "nodes",
+    "credentials",
+    "icons",
+    "index.js"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/nodes/AzureDeepSeekApi.credentials.js"
+      "credentials/AzureDeepSeekApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/AzureDeepSeekNode.js"
+      "nodes/AzureDeepSeekNode.js"
     ]
   },
   "devDependencies": {
@@ -49,8 +51,6 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
-    "@azure-rest/ai-inference": "^1.0.0-beta.6",
-    "@azure/core-auth": "^1.9.0",
     "axios": "^1.8.4",
     "n8n-core": "^1.0.0"
   }
