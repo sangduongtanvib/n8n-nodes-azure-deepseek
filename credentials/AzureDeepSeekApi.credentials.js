@@ -33,6 +33,14 @@ class AzureDeepSeekApi {
 				default: 'DeepSeek-V3',
 				required: true,
 				description: 'The deployment name of your Azure DeepSeek model',
+				},
+			{
+				displayName: 'API Version',
+				name: 'apiVersion',
+				type: 'string',
+				default: '2024-05-01-preview',
+				required: true,
+				description: 'The Azure API version to use (e.g., 2024-05-01-preview)',
 			},
 		];
 	}

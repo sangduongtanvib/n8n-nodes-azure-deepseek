@@ -14,7 +14,8 @@ export class AzureDeepSeekNode implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Azure DeepSeek LLM',
 		name: 'azureDeepSeekLlm',
-		icon: 'file:n8n-nodes-azure-deepseek.svg',
+		// Fix the icon type issue
+		icon: 'file:deepseek.svg',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
@@ -245,14 +246,17 @@ export class AzureDeepSeekNode implements INodeType {
 					// Prepare request body for LLM chain operation
 					const requestBody = {
 						messages: messages,
-						max_tokens: options.maxTokens ?? 1000,
+						max_tokens: options.maxTokens ?? 2048,
 						temperature: options.temperature ?? 0.7,
+						top_p: 0.1,
+						frequency_penalty: 0,
+						presence_penalty: 0,
 						model: options.model || (credentials.modelDeploymentName as string) || 'DeepSeek-V3',
 						stream: false,
 					};
 
-					// Use the same URL handling and API calls as in chatCompletion
-					const apiVersion = '2023-12-01-preview';
+					 // Lấy API version từ credentials thay vì hardcode
+					const apiVersion = (credentials.apiVersion as string) || '2024-05-01-preview';
 					
 					// Clean and format the endpoint URL
 					let baseUrl = (credentials.inferenceEndpoint as string).trim();
@@ -275,7 +279,7 @@ export class AzureDeepSeekNode implements INodeType {
 							'Content-Type': 'application/json',
 							'api-key': credentials.apiKey as string,
 						},
-						timeout: 60000,
+						timeout: 90000, // Tăng timeout để xử lý câu trả lời dài
 					});
 
 					if (response.status !== 200) {
@@ -336,12 +340,12 @@ export class AzureDeepSeekNode implements INodeType {
 					},
 				];
 
-				// Prepare request body - note model name is now explicitly "DeepSeek-V3" if not specified
+				// Cập nhật request body theo mẫu cURL đang hoạt động
 				const requestBody = {
 					messages: messages,
-					max_tokens: additionalOptions.maxTokens ?? 1000,
-					temperature: additionalOptions.temperature ?? 0.7,
-					top_p: additionalOptions.topP ?? 0.95,
+					max_tokens: additionalOptions.maxTokens ?? 2048,
+					temperature: additionalOptions.temperature ?? 0.8, 
+					top_p: additionalOptions.topP ?? 0.1,
 					frequency_penalty: additionalOptions.frequencyPenalty ?? 0,
 					presence_penalty: additionalOptions.presencePenalty ?? 0,
 					model: (credentials.modelDeploymentName as string) || 'DeepSeek-V3',
@@ -349,8 +353,8 @@ export class AzureDeepSeekNode implements INodeType {
 				};
 
 				try {
-					// Updated URL format with api-version parameter
-					const apiVersion = '2023-12-01-preview'; // Using a more widely supported API version
+					 // Lấy API version từ credentials thay vì hardcode
+					const apiVersion = (credentials.apiVersion as string) || '2024-05-01-preview';
 					
 					// Clean and format the endpoint URL
 					let baseUrl = (credentials.inferenceEndpoint as string).trim();
@@ -371,16 +375,15 @@ export class AzureDeepSeekNode implements INodeType {
 						url = `${baseUrl}/deployments/${(credentials.modelDeploymentName as string).trim()}/chat/completions?api-version=${apiVersion}`;
 					}
 					
-					console.log(`Making request to: ${url}`); // Helpful for debugging
+					console.log(`Making request to: ${url}`);
 
-					// Sử dụng axios thay vì fetch để có timeout rõ ràng
 					const response = await axios.post(url, requestBody, {
 						headers: {
 							'Content-Type': 'application/json',
 							'api-key': credentials.apiKey as string,
 						},
-						timeout: 60000, // Timeout 60 giây, có thể điều chỉnh tùy nhu cầu
-						validateStatus: (status) => status < 500, // Chỉ từ chối khi có lỗi server
+						timeout: 90000, // Tăng timeout để xử lý câu trả lời dài
+						validateStatus: (status) => status < 500,
 					});
 					
 					if (response.status !== 200) {

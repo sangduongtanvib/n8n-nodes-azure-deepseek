@@ -6,8 +6,7 @@ class AzureDeepSeekNode {
 		this.description = {
 			displayName: 'Azure DeepSeek LLM',
 			name: 'azureDeepSeekLlm',
-			// Fix icon reference - use the node's own SVG file
-			icon: 'n8n-nodes-azure-deepseek.svg',
+			icon: 'deepseek.svg',
 			group: ['transform'],
 			version: 1,
 			subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
@@ -235,14 +234,17 @@ class AzureDeepSeekNode {
 					// Prepare request body for LLM chain operation
 					const requestBody = {
 						messages: messages,
-						max_tokens: options.maxTokens ?? 1000,
+						max_tokens: options.maxTokens ?? 2048,
 						temperature: options.temperature ?? 0.7,
+						top_p: 0.1,
+						frequency_penalty: 0,
+						presence_penalty: 0,
 						model: options.model || credentials.modelDeploymentName || 'DeepSeek-V3',
 						stream: false,
 					};
 
-					// Use the same URL handling and API calls as in chatCompletion
-					const apiVersion = '2023-12-01-preview';
+					 // Lấy API version từ credentials thay vì hardcode
+					const apiVersion = credentials.apiVersion || '2024-05-01-preview';
 					
 					// Clean and format the endpoint URL
 					let baseUrl = credentials.inferenceEndpoint.trim();
@@ -332,20 +334,23 @@ class AzureDeepSeekNode {
 				// Prepare request body
 				const requestBody = {
 					messages: messages,
-					max_tokens: additionalOptions.maxTokens ?? 1000,
-					temperature: additionalOptions.temperature ?? 0.7,
-					top_p: additionalOptions.topP ?? 0.95,
+					max_tokens: additionalOptions.maxTokens ?? 2048,
+					temperature: additionalOptions.temperature ?? 0.8,
+					top_p: additionalOptions.topP ?? 0.1,
 					frequency_penalty: additionalOptions.frequencyPenalty ?? 0,
 					presence_penalty: additionalOptions.presencePenalty ?? 0,
+					model: credentials.modelDeploymentName || 'DeepSeek-V3',
 					stream: additionalOptions.stream ?? false,
 				};
 
 				try {
+					 // Lấy API version từ credentials thay vì hardcode
+					const apiVersion = credentials.apiVersion || '2024-05-01-preview';
+
 					// Using best practices for Azure OpenAI-compatible endpoints
 					// Need to be flexible with endpoint formats to ensure it works with all Azure configurations
 					const inferenceEndpoint = credentials.inferenceEndpoint.trim();
 					const modelName = credentials.modelDeploymentName.trim();
-					const apiVersion = '2023-12-01-preview'; // Using a more widely supported API version
 
 					// Clean and format the endpoint URL
 					let baseUrl = inferenceEndpoint;

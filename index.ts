@@ -1,7 +1,7 @@
 import { IDataObject, INodeType, INodeTypeDescription, INodeTypes } from 'n8n-workflow';
 
 import { AzureDeepSeekNode } from './nodes/AzureDeepSeekNode';
-import { AzureDeepSeekApi } from './nodes/AzureDeepSeekApi.credentials';
+import { AzureDeepSeekApi } from './credentials/AzureDeepSeekApi.credentials';
 
 export class NodeTypes implements INodeTypes {
 	nodeTypes = {
@@ -13,7 +13,7 @@ export class NodeTypes implements INodeTypes {
 
 	credentialTypes = {
 		azureDeepSeekApi: {
-			sourcePath: __dirname + '/nodes/AzureDeepSeekApi.credentials.ts',
+			sourcePath: __dirname + '/credentials/AzureDeepSeekApi.credentials.ts',
 			type: new AzureDeepSeekApi(),
 		},
 	};
